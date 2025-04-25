@@ -14,28 +14,6 @@ These callers record events following the spec-defined CoCo Event Type, ensuring
 The Attestation Server (AS) offers a flexible platform for processing AAEL logs in a generalized manner, ensuring compatibility with various confidential computing environments for diverse event verification.
 Furthermore, AS can conduct detailed analysis and enforce policies for CoCo events, utilizing the CoCo Event Spec for precise validation and scrutiny. This capability supports the development and execution of advanced security policies, enhancing the effectiveness and security of containerized workloads.
 
-```                                    
-                       ┌───────┐         
-                       │ App   │         
-                       └───┬───┘         
-                           │             
-                           │             
-                           │             
-     Record     ┌──────────▼──────────┐  
-    ┌───────────┤                     │  
-    │           │  Attestation Agent  │  
-┌───▼──┐        │                     │  
-│ AAEL │        └───┬─────────────────┘  
-│      │            │                    
-│      │            │                    
-│      │     Extend │                    
-└──────┘            │                    
-                    │                    
-              ┌─────▼───────────────────┐
-              │ Runtime Measurements/PCR│
-              └─────────────────────────┘
-```
-
 In this specification, we provide detailed information on the Attestation Agent Event Log (AAEL) format in confidential
 computing scenarios, as well as the specific CoCo Event Entry format for Confidential Containers (CoCo).
 Currently, as the kernel does not offer a unified interface for maintaining Eventlogs [1], we have decided to temporarily use the AAEL to accommodate CoCo Event Entries. 
@@ -47,14 +25,14 @@ This specification is divided into two sections: AAEL and CoCo Event Spec. AAEL 
 
 ### Attestation Agent Event Log (AAEL)
 
-1. Binding of AAEL with Dynamic Measurement Registers
+#### Binding of AAEL with Dynamic Measurement Registers
 
 Entries recorded by AAEL are bound to a specific PCR register value. With each new event added, an extend operation is
 performed on the designated PCR register. When the platform provides a (v)TPM interface, the PCR register corresponds
 to the (v)TPM's PCR register. On a platform that is solely TEE, PCR is mapped to a specific [Confidential Computing event log Measurement Register (CCMR)](https://uefi.org/specs/UEFI/2.10/38_Confidential_Computing.html#virtual-platform-cc-event-log)
 according to platform-specific rules. This mapping ensures AAEL has applicability even outside TEE scenarios.
 
-2. AAEL Log Entry Format
+#### AAEL Log Entry Format
 
 AAEL log entries consist of two types: Event Entry and INIT Entry. 
 
@@ -93,7 +71,7 @@ Content fields MUST be in JSON format, without spaces or delimiters.
 Concrete supported `Operation`s and `Content`s are defined in the following table:
 | Operation | Content | Description | Content Example |
 | --- | --- | --- |
-| `PullImage` | `{"image":"<image-reference>","digest":"<digest>:<hex>"}` | An image pulling event with image reference and manifest digest | `{"image":"alpine","digest":"sha256:0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0"}`
+| `PullImage` | `{"image":"<image-reference>","digest":"<digest>:<hex>"}` | An image pulling event with image reference and manifest digest | `{"image":"alpine","digest":"sha256:0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0"}` |
 
 ## References
 
