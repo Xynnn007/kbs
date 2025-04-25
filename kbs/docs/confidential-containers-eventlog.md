@@ -70,7 +70,7 @@ Content fields MUST be in JSON format, without spaces or delimiters.
 
 Concrete supported `Operation`s and `Content`s are defined in the following table:
 | Operation | Content | Description | Content Example |
-| --- | --- | --- |
+| --- | --- | --- | --- |
 | `PullImage` | `{"image":"<image-reference>","digest":"<digest>:<hex>"}` | An image pulling event with image reference and manifest digest | `{"image":"alpine","digest":"sha256:0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0"}` |
 
 ## References
