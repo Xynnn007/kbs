@@ -16,9 +16,13 @@ use tonic::{Request, Response, Status};
 
 use crate::as_api::attestation_service_server::{AttestationService, AttestationServiceServer};
 use crate::as_api::{
-    AttestationRequest, AttestationResponse, ChallengeRequest, ChallengeResponse,
+    AttestationRequest, AttestationResponse, ChallengeRequest, ChallengeResponse, SetPolicyRequest,
+    SetPolicyResponse,
+};
+use crate::rvps_api::{
+    reference_value_provider_service_server::ReferenceValueProviderService,
     ReferenceValueQueryRequest, ReferenceValueQueryResponse, ReferenceValueRegisterRequest,
-    ReferenceValueRegisterResponse, SetPolicyRequest, SetPolicyResponse,
+    ReferenceValueRegisterResponse,
 };
 
 fn to_kbs_tee(tee: &str) -> anyhow::Result<Tee> {
@@ -225,7 +229,10 @@ impl AttestationService for Arc<RwLock<AttestationServer>> {
         };
         Ok(Response::new(res))
     }
+}
 
+#[tonic::async_trait]
+impl ReferenceValueProviderService for Arc<RwLock<AttestationServer>> {
     async fn query_reference_value(
         &self,
         _request: Request<ReferenceValueQueryRequest>,

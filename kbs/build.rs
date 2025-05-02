@@ -10,6 +10,6 @@ use std::process::Command;
 fn main() -> Result<(), String> {
     #[cfg(feature = "tonic-build")]
     tonic_build::compile_protos("../protos/attestation.proto").map_err(|e| format!("{e}"))?;
-
+    tonic_build::compile_protos("../protos/reference.proto").map_err(|e| format!("{e}"))?;
     Ok(())
 }

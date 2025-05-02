@@ -4,6 +4,10 @@
 
 use anyhow::*;
 use async_trait::async_trait;
+use attestation::{
+    reference_value_provider_service_client::ReferenceValueProviderServiceClient,
+    ReferenceValueQueryRequest, ReferenceValueQueryResponse, ReferenceValueRegisterRequest,
+};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use kbs_types::{Attestation, Challenge, Tee};
 use log::info;
@@ -11,19 +15,18 @@ use mobc::{Manager, Pool};
 use serde::Deserialize;
 use serde_json::json;
 use std::collections::HashMap;
-use tokio::sync::Mutex;
 use tonic::transport::Channel;
 
 use crate::attestation::backend::{make_nonce, Attest};
 
 use self::attestation::{
     attestation_request::RuntimeData, attestation_service_client::AttestationServiceClient,
-    AttestationRequest, ChallengeRequest, ReferenceValueQueryRequest, ReferenceValueQueryResponse,
-    ReferenceValueRegisterRequest, SetPolicyRequest,
+    AttestationRequest, ChallengeRequest, SetPolicyRequest,
 };
 
 mod attestation {
     tonic::include_proto!("attestation");
+    tonic::include_proto!("reference");
 }
 
 pub const DEFAULT_AS_ADDR: &str = "http://127.0.0.1:50004";
@@ -34,9 +37,9 @@ pub const COCO_AS_HASH_ALGORITHM: &str = "sha384";
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct GrpcConfig {
     #[serde(default = "default_as_addr")]
-    pub(crate) as_addr: String,
+    pub as_addr: String,
     #[serde(default = "default_pool_size")]
-    pub(crate) pool_size: u64,
+    pub pool_size: u64,
 }
 
 fn default_as_addr() -> String {
@@ -57,7 +60,7 @@ impl Default for GrpcConfig {
 }
 
 pub struct GrpcClientPool {
-    pool: Mutex<Pool<GrpcManager>>,
+    pool: Pool<GrpcManager>,
 }
 
 impl GrpcClientPool {
@@ -69,7 +72,7 @@ impl GrpcClientPool {
         let manager = GrpcManager {
             as_addr: config.as_addr,
         };
-        let pool = Mutex::new(Pool::builder().max_open(config.pool_size).build(manager));
+        let pool = Pool::builder().max_open(config.pool_size).build(manager);
 
         Ok(Self { pool })
     }
@@ -83,9 +86,9 @@ impl Attest for GrpcClientPool {
             policy: policy.to_string(),
         });
 
-        let mut client = { self.pool.lock().await.get().await? };
-
+        let mut client = self.pool.get().await?;
         client
+            .as_rpc
             .set_attestation_policy(req)
             .await
             .map_err(|e| anyhow!("Set Policy Failed: {:?}", e))?;
@@ -116,9 +119,14 @@ impl Attest for GrpcClientPool {
             policy_ids: vec!["default".to_string()],
         });
 
-        let mut client = { self.pool.lock().await.get().await? };
+        let mut client = self.pool.get().await?;
+        info!(
+            "Active connections: {}",
+            self.pool.state().await.connections
+        );
 
         let token = client
+            .as_rpc
             .attestation_evaluate(req)
             .await?
             .into_inner()
@@ -139,9 +147,9 @@ impl Attest for GrpcClientPool {
                 inner.insert(String::from("tee_params"), tee_parameters.to_string());
                 let req = tonic::Request::new(ChallengeRequest { inner });
 
-                let mut client = { self.pool.lock().await.get().await? };
-
+                let mut client = self.pool.get().await?;
                 client
+                    .as_rpc
                     .get_attestation_challenge(req)
                     .await?
                     .into_inner()
@@ -163,9 +171,10 @@ impl Attest for GrpcClientPool {
             message: message.to_string(),
         });
 
-        let mut client = { self.pool.lock().await.get().await? };
+        let mut client = self.pool.get().await?;
 
         client
+            .rvps_rpc
             .register_reference_value(req)
             .await
             .map_err(|e| anyhow!("Failed to set reference values: {:?}", e))?;
@@ -176,11 +185,12 @@ impl Attest for GrpcClientPool {
     async fn query_reference_values(&self) -> anyhow::Result<HashMap<String, Vec<String>>> {
         let req = tonic::Request::new(ReferenceValueQueryRequest {});
 
-        let mut client = { self.pool.lock().await.get().await? };
+        let mut client = self.pool.get().await?;
 
         let ReferenceValueQueryResponse {
             reference_value_results,
         } = client
+            .rvps_rpc
             .query_reference_value(req)
             .await
             .map_err(|e| anyhow!("Failed to get reference values: {:?}", e))?
@@ -194,17 +204,26 @@ pub struct GrpcManager {
     as_addr: String,
 }
 
+pub struct AsConnection {
+    as_rpc: AttestationServiceClient<Channel>,
+    rvps_rpc: ReferenceValueProviderServiceClient<Channel>,
+}
+
 #[async_trait]
 impl Manager for GrpcManager {
-    type Connection = AttestationServiceClient<Channel>;
-    type Error = tonic::transport::Error;
+    type Connection = AsConnection;
+    type Error = Error;
 
     async fn connect(&self) -> Result<Self::Connection, Self::Error> {
-        let connection = AttestationServiceClient::connect(self.as_addr.clone()).await?;
-        std::result::Result::Ok(connection)
+        let connection = Channel::from_shared(self.as_addr.clone())?
+            .connect()
+            .await?;
+        let as_rpc = AttestationServiceClient::new(connection.clone());
+        let rvps_rpc = ReferenceValueProviderServiceClient::new(connection);
+        Ok(AsConnection { as_rpc, rvps_rpc })
     }
 
     async fn check(&self, conn: Self::Connection) -> Result<Self::Connection, Self::Error> {
-        std::result::Result::Ok(conn)
+        Ok(conn)
     }
 }
