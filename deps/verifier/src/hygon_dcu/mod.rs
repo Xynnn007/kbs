@@ -3,13 +3,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use async_trait::async_trait;
-use csv_rs::api::dcu::AttestationReport;
+use csv_rs::api::dcu::{verify_reports, AttestationReport};
 use log::warn;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Map};
 
-use crate::{InitDataHash, ReportData, TeeClass, TeeEvidence, TeeEvidenceParsedClaim, Verifier};
+use crate::{
+    regularize_data, InitDataHash, ReportData, TeeClass, TeeEvidence, TeeEvidenceParsedClaim,
+    Verifier,
+};
 
 #[derive(Serialize, Deserialize)]
 struct DcuEvidence {
@@ -17,7 +21,6 @@ struct DcuEvidence {
 }
 
 pub const HYGON_DCU_TEE_CLASS: &str = "dcu";
-pub const HRK: &[u8] = include_bytes!("hrk.cert");
 
 #[derive(Debug, Default)]
 pub struct HygonDcuVerifier {}
@@ -32,131 +35,47 @@ impl Verifier for HygonDcuVerifier {
     ) -> Result<(TeeEvidenceParsedClaim, TeeClass)> {
         let tee_evidence = serde_json::from_value::<DcuEvidence>(evidence)?;
 
-        verify_report_signature(&tee_evidence.attestation_report, &tee_evidence.cert_chain)?;
-
-        let report_raw = restore_attestation_report(tee_evidence.attestation_report)?;
-
-        if let ReportData::Value(expected_report_data) = expected_report_data {
-            debug!("Check the binding of REPORT_DATA.");
-            let expected_report_data =
-                regularize_data(expected_report_data, 64, "REPORT_DATA", "CSV");
-            if expected_report_data != report_raw.body.report_data {
-                return Err(CsvError::ReportDataMismatch.into());
+        let expected_report_data = match expected_report_data {
+            ReportData::Value(expected_report_data) => {
+                let user_data_slice =
+                    regularize_data(expected_report_data, 64, "REPORT_DATA", "Hygon DCU");
+                let mut user_data = [0u8; 64];
+                user_data.copy_from_slice(&user_data_slice[..64]);
+                user_data
             }
-        }
+            ReportData::NotProvided => bail!("DCU must check report data"),
+        };
+
+        verify_reports(&tee_evidence.attestation_reports, &expected_report_data).await?;
 
         if let InitDataHash::Value(_) = expected_init_data_hash {
             warn!("DCU does not support init data hash mechanism. skip.");
         }
 
-        let claims = parse_tee_evidence(&report_raw, tee_evidence.serial_number.clone())?;
+        let claims = parse_tee_evidence(tee_evidence.attestation_reports)?;
         Ok((claims, "cpu".to_string()))
     }
 }
 
-fn verify_report_signature(
-    attestation_report: &AttestationReport,
-    cert_chain: &CertificateChain,
-) -> Result<(), CsvError> {
-    // Verify certificate chain
-    let hrk = ca::Certificate::decode(&mut &HRK[..], ())?;
-    (&hrk, &hrk)
-        .verify()
-        .map_err(|err| CsvError::HRKSignatureVerification(err.to_string()))?;
-    (&hrk, &cert_chain.hsk)
-        .verify()
-        .map_err(|err| CsvError::HSKSignatureValidation(err.to_string()))?;
-    (&cert_chain.hsk, &cert_chain.cek)
-        .verify()
-        .map_err(|err| CsvError::CEKSignatureValidation(err.to_string()))?;
-    (&cert_chain.cek, &cert_chain.pek)
-        .verify()
-        .map_err(|err| CsvError::PEKSignatureValidation(err.to_string()))?;
-
-    // Verify the TEE Hardware signature.
-
-    (&cert_chain.pek, attestation_report)
-        .verify()
-        .map_err(|err| CsvError::AttestationReportSignatureValidation(err.to_string()))?;
-
-    Ok(()).map_err(|err| CsvError::VerifyReportSignature(err.to_string()))
-}
-
-fn xor_with_anonce(data: &mut [u8], anonce: &u32) {
-    let mut anonce_array = [0u8; 4];
-    anonce_array[..].copy_from_slice(&anonce.to_le_bytes());
-
-    for (index, item) in data.iter_mut().enumerate() {
-        *item ^= anonce_array[index % 4];
+// Dump the DCU information from the report.
+fn parse_tee_evidence(reports: Vec<AttestationReport>) -> Result<TeeEvidenceParsedClaim> {
+    let mut claims = Map::new();
+    for (index, report) in reports.into_iter().enumerate() {
+        let key = index.to_string();
+        let value = json!({
+            "body": {
+                "version": report.body.version,
+                "chip_id": hex::encode(report.body.chip_id),
+                "user_data": hex::encode(report.body.user_data),
+                "measure": hex::encode(report.body.measure),
+                "reserved": hex::encode(report.body.reserved),
+                "sig_usage": format!("{:x}", report.body.sig_usage),
+                "sig_algo": format!("{:x}", report.body.sig_algo),
+            },
+            "report_data": hex::encode(report.body.user_data),
+        });
+        claims.insert(key, value);
     }
-}
 
-fn restore_attestation_report(report: AttestationReport) -> Result<AttestationReport> {
-    let body = &report.body;
-    let mut user_pubkey_digest = body.user_pubkey_digest;
-    xor_with_anonce(&mut user_pubkey_digest, &report.anonce);
-    let mut vm_id = body.vm_id;
-    xor_with_anonce(&mut vm_id, &report.anonce);
-    let mut vm_version = body.vm_version;
-    xor_with_anonce(&mut vm_version, &report.anonce);
-    let mut report_data = body.report_data;
-    xor_with_anonce(&mut report_data, &report.anonce);
-    let mut mnonce = body.mnonce;
-    xor_with_anonce(&mut mnonce, &report.anonce);
-    let mut measure = body.measure;
-    xor_with_anonce(&mut measure, &report.anonce);
-
-    let policy = report.body.policy.xor(&report.anonce);
-
-    Ok(AttestationReport {
-        body: Body {
-            user_pubkey_digest,
-            vm_id,
-            vm_version,
-            report_data,
-            mnonce,
-            measure,
-            policy,
-        },
-        ..report
-    })
-}
-
-// Dump the CSV information from the report.
-fn parse_tee_evidence(
-    report: &AttestationReport,
-    serial_number: Vec<u8>,
-) -> Result<TeeEvidenceParsedClaim> {
-    let body = &report.body;
-    let claims_map = json!({
-        // policy fields
-        "policy_nodbg": format!("{}",body.policy.nodbg()),
-        "policy_noks": format!("{}", body.policy.noks()),
-        "policy_es": format!("{}", body.policy.es()),
-        "policy_nosend": format!("{}", body.policy.nosend()),
-        "policy_domain": format!("{}", body.policy.domain()),
-        "policy_csv": format!("{}", body.policy.csv()),
-        "policy_csv3": format!("{}", body.policy.csv3()),
-        "policy_asid_reuse": format!("{}", body.policy.asid_reuse()),
-        "policy_hsk_version": format!("{}", body.policy.hsk_version()),
-        "policy_cek_version": format!("{}", body.policy.cek_version()),
-        "policy_api_major": format!("{}", body.policy.api_major()),
-        "policy_api_minor": format!("{}", body.policy.api_minor()),
-
-        // launch info inject with pdh and session data
-        "user_pubkey_digest": format!("{}", base64::engine::general_purpose::STANDARD.encode(body.user_pubkey_digest)),
-        "vm_id": format!("{}", base64::engine::general_purpose::STANDARD.encode(body.vm_id)),
-        "vm_version": format!("{}", base64::engine::general_purpose::STANDARD.encode(body.vm_version)),
-
-        // Chip ID
-        "serial_number": format!("{}", base64::engine::general_purpose::STANDARD.encode(serial_number)),
-
-        // measurement
-        "measurement": format!("{}", base64::engine::general_purpose::STANDARD.encode(body.measure)),
-
-        // report data
-        "report_data": format!("{}", base64::engine::general_purpose::STANDARD.encode(body.report_data)),
-    });
-
-    Ok(claims_map as TeeEvidenceParsedClaim)
+    Ok(TeeEvidenceParsedClaim::Object(claims))
 }

@@ -43,7 +43,9 @@ byteorder = "1"
 cfg-if = "1.0.0"
 codicon = { version = "3.0", optional = true }
 # TODO: change it to "0.1", once released.
-csv-rs = { git = "https://github.com/openanolis/csv-rs", rev = "94606be", optional = true }
+csv-rs = { git = "https://github.com/panpingsheng/csv-rs.git", rev = "7538198", optional = true, default-features = false, features = [
+    "network",
+] }
 eventlog-rs = { version = "0.1.5", optional = true }
 hex.workspace = true
 jsonwebkey = "0.3.5"
