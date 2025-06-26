@@ -6,7 +6,7 @@ insecure_key = true
 
 [attestation_service]
 type = "coco_as_grpc"
-as_addr = "http://127.0.0.1:50004"
+as_addr = "http://127.0.0.1:3000"
 pool_size = 200
 
 [admin]
