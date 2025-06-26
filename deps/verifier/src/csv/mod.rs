@@ -180,7 +180,7 @@ fn verify_report_signature(
     //     .map_err(|err| CsvError::AttestationReportSignatureValidation(err.to_string()))?;
 
     // Ok(()).map_err(|err| CsvError::VerifyReportSignature(err.to_string()))
-    Ok(())
+    Ok(()).map_err(|err| CsvError::VerifyReportSignature(err.to_string()))
 }
 
 fn xor_with_anonce(data: &mut [u8], anonce: &u32) {
