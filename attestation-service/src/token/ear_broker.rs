@@ -149,11 +149,19 @@ impl EarAttestationTokenBroker {
             PolicyEngineType::OPA.to_policy_engine(Path::new(&config.policy_dir))?;
 
         policy_engine
-            .set_default_policy("default_cpu", include_str!("ear_default_policy_cpu.rego"))
+            .set_policy(
+                "default_cpu".to_string(),
+                include_str!("ear_default_policy_cpu.rego").to_string(),
+                false,
+            )
             .await?;
 
         policy_engine
-            .set_default_policy("default_gpu", include_str!("ear_default_policy_gpu.rego"))
+            .set_policy(
+                "default_gpu".to_string(),
+                include_str!("ear_default_policy_gpu.rego").to_string(),
+                false,
+            )
             .await?;
 
         if config.signer.is_none() {
@@ -323,7 +331,7 @@ impl AttestationTokenBroker for EarAttestationTokenBroker {
 
     async fn set_policy(&self, policy_id: String, policy: String) -> Result<()> {
         self.policy_engine
-            .set_policy(policy_id, policy)
+            .set_policy(policy_id, policy, true)
             .await
             .map_err(Error::from)
     }

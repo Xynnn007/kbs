@@ -5,7 +5,7 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use base64::Engine;
-use log::{debug, info, warn};
+use log::{debug, warn};
 use sha2::{Digest, Sha384};
 use std::collections::HashMap;
 use std::fs;
@@ -104,7 +104,12 @@ impl PolicyEngine for OPA {
         Ok(res)
     }
 
-    async fn set_policy(&self, policy_id: String, policy: String) -> Result<(), PolicyError> {
+    async fn set_policy(
+        &self,
+        policy_id: String,
+        policy: String,
+        overwrite: bool,
+    ) -> Result<(), PolicyError> {
         let policy_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(policy)?;
 
         if !Self::is_valid_policy_id(&policy_id) {
@@ -130,31 +135,14 @@ impl PolicyEngine for OPA {
 
         policy_file_path.push(format!("{policy_id}.rego"));
 
-        tokio::fs::write(&policy_file_path, policy_bytes)
-            .await
-            .map_err(PolicyError::WritePolicyFileFailed)
-    }
-
-    async fn set_default_policy(&self, policy_id: &str, policy: &str) -> Result<(), PolicyError> {
-        // Don't set the policy if there is already a policy set for the given id.
-        let mut policy_file_path = PathBuf::from(
-            &self
-                .policy_dir_path
-                .to_str()
-                .ok_or_else(|| PolicyError::PolicyDirPathToStringFailed)?,
-        );
-
-        policy_file_path.push(format!("{policy_id}.rego"));
-
-        if policy_file_path.exists() {
-            warn!("Policy {policy_id} already exists, so the default policy will not be written.");
+        if policy_file_path.as_path().exists() && !overwrite {
+            warn!("Policy `{policy_id}` already exists, skip to overwrite it");
             return Ok(());
         }
 
-        info!("Loading default AS policy {policy_id}");
-
-        let default_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(policy);
-        self.set_policy(policy_id.to_string(), default_b64).await
+        tokio::fs::write(&policy_file_path, policy_bytes)
+            .await
+            .map_err(PolicyError::WritePolicyFileFailed)
     }
 
     async fn list_policies(&self) -> Result<HashMap<String, PolicyDigest>, PolicyError> {
@@ -301,7 +289,8 @@ default allow = true"
         assert!(opa
             .set_policy(
                 "test".to_string(),
-                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(policy)
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(policy),
+                true,
             )
             .await
             .is_ok());

@@ -109,7 +109,11 @@ impl SimpleAttestationTokenBroker {
             PolicyEngineType::OPA.to_policy_engine(Path::new(&config.policy_dir))?;
 
         policy_engine
-            .set_default_policy("default", include_str!("simple_default_policy.rego"))
+            .set_policy(
+                "default".to_string(),
+                include_str!("simple_default_policy.rego").to_string(),
+                false,
+            )
             .await?;
 
         if config.signer.is_none() {
@@ -314,7 +318,7 @@ impl AttestationTokenBroker for SimpleAttestationTokenBroker {
 
     async fn set_policy(&self, policy_id: String, policy: String) -> Result<()> {
         self.policy_engine
-            .set_policy(policy_id, policy)
+            .set_policy(policy_id, policy, true)
             .await
             .map_err(Error::from)
     }

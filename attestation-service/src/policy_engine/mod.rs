@@ -98,11 +98,12 @@ pub trait PolicyEngine: Send + Sync {
 
     /// Add an additional policy to the AS that can be referenced by given policy id.
     /// The policy is expected to be provided as base 64.
-    async fn set_policy(&self, policy_id: String, policy: String) -> Result<(), PolicyError>;
-
-    /// A wrapper for set policy that will only set the policy if it does not already exist.
-    /// Also, here the policy is not base 64.
-    async fn set_default_policy(&self, policy_id: &str, policy: &str) -> Result<(), PolicyError>;
+    async fn set_policy(
+        &self,
+        policy_id: String,
+        policy: String,
+        overwrite: bool,
+    ) -> Result<(), PolicyError>;
 
     /// The result is a map. The key is the policy id, and the
     /// value is the digest of the policy (using **Sha384**).
