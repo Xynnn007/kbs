@@ -100,7 +100,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Build ${{ matrix.tag }} (${{ matrix.arch }})
-        uses: ./.github/workflows/templates/build-single-image.yml
+        uses: ./.github/actions/build-single-image
         with:
           ghcr_token: ${{ contains(inputs.build_option, '--push') && secrets.GHCR_TOKEN || '' }}
           docker_file: ${{ matrix.docker_file }}
@@ -210,7 +210,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Build ${{ matrix.tag }} (${{ matrix.arch }})
-        uses: ./.github/actions/build-staged-image
+        uses: ./.github/actions/build-single-image
         with:
           ghcr_token: ${{ secrets.GHCR_TOKEN }}
           docker_file: ${{ matrix.docker_file }}
@@ -245,7 +245,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Build ${{ matrix.tag }} (${{ matrix.arch }})
-        uses: ./.github/workflows/templates/build-single-image.yml
+        uses: ./.github/actions/build-single-image
         with:
           ghcr_token: ${{ secrets.GHCR_TOKEN }}
           docker_file: ${{ matrix.docker_file }}
