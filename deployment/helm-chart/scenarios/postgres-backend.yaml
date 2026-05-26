@@ -19,13 +19,12 @@
 # includes current sources (e.g. PostgreSQL table identifier quoting). Override `as.image` anytime.
 #
 # Verify with kbs-client (build: `cargo build -p kbs-client --release`, binary under workspace target).
-# Admin PEM is `private.key` in the `*bootstrap-user-keys` Secret (see `kubectl get secrets -n <ns> | grep bootstrap`).
-# Important: `--auth-private-key` must come immediately after `config`, before the nested subcommand.
+# Admin JWT is in the `*bootstrap-user-keys` Secret under `KBS_ADMIN_TOKEN` (see README Testing section).
 #
 #   kubectl port-forward -n coco-trustee svc/trustee-kbs 8080:8080 &
 #   SECRET=$(kubectl get secrets -n coco-trustee -o name | grep bootstrap-user-keys | head -1 | cut -d/ -f2)
-#   kubectl get secret "$SECRET" -n coco-trustee -o jsonpath='{.data.KBS_ADMIN_PRIVATE_KEY}' | base64 -d >/tmp/kbs-admin.key
-#   kbs-client --url http://127.0.0.1:8080 config --auth-private-key /tmp/kbs-admin.key set-resource-policy --allow-all
+#   kubectl get secret "$SECRET" -n coco-trustee -o jsonpath='{.data.KBS_ADMIN_TOKEN}' | base64 -d >/tmp/admin-token
+#   kbs-client --url http://127.0.0.1:8080 config --admin-token-file /tmp/admin-token set-resource-policy --allow-all
 
 sessionStorageType: Memory
 

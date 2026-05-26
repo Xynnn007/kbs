@@ -364,6 +364,22 @@ Internal: bootstrap hook Job images (defaults can be overridden in values.yaml).
 {{- end }}
 
 {{/*
+KBS admin JWT settings (bootstrap token + kbs-config.toml).
+*/}}
+{{- define "coco-trustee.kbs.adminIssuer" -}}
+{{- $adm := (((.Values.kbs | default dict).config | default dict).admin | default dict) -}}
+{{- default "TrusteeInHelm" $adm.issuer }}
+{{- end }}
+{{- define "coco-trustee.kbs.adminAudience" -}}
+{{- $adm := (((.Values.kbs | default dict).config | default dict).admin | default dict) -}}
+{{- default "KBS" $adm.audience }}
+{{- end }}
+{{- define "coco-trustee.kbs.adminRole" -}}
+{{- $adm := (((.Values.kbs | default dict).config | default dict).admin | default dict) -}}
+{{- default "admin" $adm.role }}
+{{- end }}
+
+{{/*
 Secret name for KBS + AS user-keys volume. Ephemeral path uses hook-created Secret; otherwise secrets.existingSecretName.
 */}}
 {{- define "coco-trustee.userKeysSecretNameResolved" -}}
@@ -378,6 +394,7 @@ Workloads mount these to private.key / public.pub / token.key / token-cert-chain
 */}}
 {{- define "coco-trustee.userKeysSecretDataKey.adminPrivate" -}}KBS_ADMIN_PRIVATE_KEY{{- end }}
 {{- define "coco-trustee.userKeysSecretDataKey.adminPublic" -}}KBS_ADMIN_PUBKEY{{- end }}
+{{- define "coco-trustee.userKeysSecretDataKey.adminToken" -}}KBS_ADMIN_TOKEN{{- end }}
 {{- define "coco-trustee.userKeysSecretDataKey.tokenSigning" -}}AS_TOKEN_SIGNING_PRIVATE_KEY{{- end }}
 {{- define "coco-trustee.userKeysSecretDataKey.tokenCertChain" -}}AS_TOKEN_VERIFICATION_PUBLIC_KEY_CERT_CHAIN{{- end }}
 

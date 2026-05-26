@@ -60,6 +60,19 @@ spec:
               openssl x509 -req -days 3650 -in token-req.csr -CA ca-cert.pem -CAkey ca.key -CAcreateserial \
                 -out token-cert.pem -extensions v3_req -extfile ext.cnf
               cat token-cert.pem ca-cert.pem > token-cert-chain.pem
+
+              b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+              header='{"alg":"EdDSA","typ":"JWT"}'
+              iat="$(date +%s)"
+              exp="$((iat + 315360000))"
+              payload="{\"iss\":\"{{ include "coco-trustee.kbs.adminIssuer" . }}\",\"sub\":\"admin\",\"aud\":[\"{{ include "coco-trustee.kbs.adminAudience" . }}\"],\"role\":\"{{ include "coco-trustee.kbs.adminRole" . }}\",\"iat\":${iat},\"exp\":${exp}}"
+              h64="$(printf '%s' "${header}" | b64url)"
+              p64="$(printf '%s' "${payload}" | b64url)"
+              signing_input="$(mktemp)"
+              printf '%s' "${h64}.${p64}" > "${signing_input}"
+              sig="$(openssl pkeyutl -sign -inkey private.key -rawin -in "${signing_input}" | b64url)"
+              rm -f "${signing_input}"
+              printf '%s.%s.%s\n' "${h64}" "${p64}" "${sig}" > admin-token
       containers:
         - name: create-user-keys-secret
           image: {{ include "coco-trustee.internal.bootstrapKeysKubectlImage" . | quote }}
@@ -93,6 +106,7 @@ spec:
               kubectl create secret generic "$NAME" -n "$NS" \
                 --from-file=KBS_ADMIN_PRIVATE_KEY=/work/private.key \
                 --from-file=KBS_ADMIN_PUBKEY=/work/public.pub \
+                --from-file=KBS_ADMIN_TOKEN=/work/admin-token \
                 --from-file=AS_TOKEN_SIGNING_PRIVATE_KEY=/work/token.key \
                 --from-file=AS_TOKEN_VERIFICATION_PUBLIC_KEY_CERT_CHAIN=/work/token-cert-chain.pem
               echo "Created secret $NAME"

@@ -17,15 +17,19 @@ pool_size = {{ default 200 $att.poolSize }}
 timeout = {{ default 5 $att.timeout }}
 
 [admin]
-type = "Simple"
+authorization_mode = "AuthenticatedAuthorization"
 
-[[admin.personas]]
-id = "admin"
-public_key_path = "/opt/confidential-containers/kbs/user-keys/public.pub"
+[admin.authentication.bearer_jwt]
+identity_providers = [
+    { issuer = "{{ include "coco-trustee.kbs.adminIssuer" . }}", public_key_uri = "/opt/confidential-containers/kbs/user-keys/public.pub" },
+]
+
+[admin.authorization.regex_acl]
+acls = [{ role = "{{ include "coco-trustee.kbs.adminRole" . }}", allowed_endpoints = "^/kbs/.+$" }]
 
 [[plugins]]
 name = "resource"
-type = "kvstorage"
+storage_backend_type = "kvstorage"
 
 {{- $st := include "coco-trustee.storage.type" . | trim }}
 {{- $sst := include "coco-trustee.kbs.sessionStorageType" . | trim }}

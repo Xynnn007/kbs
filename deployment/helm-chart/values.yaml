@@ -53,6 +53,12 @@ storageBackend:
           memory: 1Gi
 
 kbs:
+  config:
+    admin:
+      # JWT claims for bootstrap-generated admin token; must match [admin.authentication.bearer_jwt] and regex_acl role.
+      issuer: TrusteeInHelm
+      audience: KBS
+      role: admin
   image:
     repository: ghcr.io/confidential-containers/staged-images/kbs-grpc-as
     pullPolicy: IfNotPresent
@@ -131,5 +137,6 @@ secrets:
   # When false, you must pre-create a Secret (see README) and set existingSecretName.
   useEphemeralGeneratedKeys: true
   # Required when useEphemeralGeneratedKeys is false. Secret must contain keys:
-  # KBS_ADMIN_PRIVATE_KEY, KBS_ADMIN_PUBKEY, AS_TOKEN_SIGNING_PRIVATE_KEY, AS_TOKEN_VERIFICATION_PUBLIC_KEY_CERT_CHAIN
+  # KBS_ADMIN_PRIVATE_KEY, KBS_ADMIN_PUBKEY, KBS_ADMIN_TOKEN (optional if you generate tokens locally),
+  # AS_TOKEN_SIGNING_PRIVATE_KEY, AS_TOKEN_VERIFICATION_PUBLIC_KEY_CERT_CHAIN
   existingSecretName: ""
