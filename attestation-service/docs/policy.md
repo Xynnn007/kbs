@@ -58,6 +58,29 @@ New policies should use `query_reference_value` because it avoids loading
 unrelated records. During migration, policies may use both styles; the
 per-attestation cache keeps their view consistent.
 
+## Artifact Server queries
+
+`query_artifact_server` asks the configured Artifact Server whether a set of
+evidence measurements is a known, non-revoked release. The argument is one
+object: keys are measurement types, values are strings.
+
+```rego
+allow if {
+    query_artifact_server({
+        "tdx.td-shim": input.tdx.td_shim,
+        "container.image.cmaas-runtime": input.container.image
+    })
+}
+```
+
+The function returns `true` when resolve succeeds and `false` otherwise,
+including when a measurement is unknown or revoked. The Artifact Server URL
+comes from AS config `artifact_server_address` (default
+`https://attest-pre.aliyuncs.com`).
+
+Unlike `query_reference_value`, a transport or server error currently also
+evaluates to `false` rather than failing policy evaluation.
+
 ## Simple
 
 The simple token broker only evaluates one claim, which is `allow`.

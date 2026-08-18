@@ -2,9 +2,9 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
-#[cfg(feature = "policy-rvps")]
-use anyhow::{anyhow, bail};
-use anyhow::{Context, Result};
+#[cfg(any(feature = "policy-rvps", feature = "policy-artifact-server"))]
+use anyhow::bail;
+use anyhow::{anyhow, Context, Result};
 use log::debug;
 #[cfg(feature = "policy-rvps")]
 use log::warn;
@@ -118,12 +118,46 @@ fn query_reference_value_extension(
     })
 }
 
+#[cfg(feature = "policy-artifact-server")]
+fn query_artifact_server_extension(address: &str) -> Box<dyn Extension> {
+    let address = address.to_string();
+    Box::new(move |params: Vec<regorus::Value>| {
+        use artifact_resolve_sdk::{Measurement, ReleaseManifest};
+        use canon_json::CanonJsonSerialize;
+
+        if params.len() != 1 {
+            bail!("query_artifact_server requires exactly one parameter");
+        }
+        let slices = params[0]
+            .as_object()
+            .context("query_artifact_server parameter must be an object")?;
+        let slices_string = slices
+            .to_canon_json_string()
+            .context("query_artifact_server parameter must be an object")?;
+        let slices_json: HashMap<String, String> = serde_json::from_str(&slices_string)?;
+
+        debug!("query artifact value from artifact server: {slices_json:?}");
+        let client = artifact_resolve_sdk::blocking::Client::new(&address)?;
+
+        let measurements = slices_json
+            .iter()
+            .map(|(key, value)| Measurement::text(key, value))
+            .collect::<Vec<Measurement>>();
+        let resolve_request =
+            artifact_resolve_sdk::ResolveRequest::new(ReleaseManifest::new(measurements));
+        let res = client.resolve(&resolve_request).is_ok();
+        Ok(regorus::Value::Bool(res))
+    })
+}
+
 async fn common_evaluate(
     policy: String,
     input: String,
     policy_id: String,
     evaluation_rules: Vec<String>,
     reference_value_resolver: Arc<ReferenceValueResolver>,
+    #[cfg_attr(not(feature = "policy-artifact-server"), allow(unused_variables))]
+    artifact_server_address: &str,
 ) -> Result<EvaluationResult, PolicyError> {
     let data = if policy_uses_legacy_reference(&policy)? {
         let reference_values = reference_value_resolver
@@ -135,31 +169,38 @@ async fn common_evaluate(
         "{}".to_string()
     };
 
+    let mut query_extensions = vec![];
     #[cfg(feature = "policy-rvps")]
     {
         let runtime_handle = tokio::runtime::Handle::current();
-        let query_extension = Some(query_reference_value_extension(
-            reference_value_resolver,
-            runtime_handle,
+        query_extensions.push((
+            "query_reference_value".to_string(),
+            query_reference_value_extension(reference_value_resolver, runtime_handle),
         ));
-        tokio::task::spawn_blocking(move || {
-            evaluate_sync(
-                policy,
-                input,
-                policy_id,
-                evaluation_rules,
-                data,
-                query_extension,
-            )
-        })
-        .await
-        .map_err(|e| {
-            PolicyError::EvalPolicyFailed(anyhow!("Regorus blocking evaluation task failed: {e}"))
-        })?
     }
 
-    #[cfg(not(feature = "policy-rvps"))]
-    evaluate_sync(policy, input, policy_id, evaluation_rules, data, None)
+    #[cfg(feature = "policy-artifact-server")]
+    {
+        query_extensions.push((
+            "query_artifact_server".to_string(),
+            query_artifact_server_extension(artifact_server_address),
+        ));
+    }
+
+    tokio::task::spawn_blocking(move || {
+        evaluate_sync(
+            policy,
+            input,
+            policy_id,
+            evaluation_rules,
+            data,
+            query_extensions,
+        )
+    })
+    .await
+    .map_err(|e| {
+        PolicyError::EvalPolicyFailed(anyhow!("Regorus blocking evaluation task failed: {e}"))
+    })?
 }
 
 fn evaluate_sync(
@@ -168,7 +209,7 @@ fn evaluate_sync(
     policy_id: String,
     evaluation_rules: Vec<String>,
     data: String,
-    query_extension: Option<Box<dyn Extension>>,
+    query_extensions: Vec<(String, Box<dyn Extension>)>,
 ) -> Result<EvaluationResult, PolicyError> {
     let mut engine = regorus::Engine::new();
 
@@ -193,9 +234,9 @@ fn evaluate_sync(
         .context("set input")
         .map_err(PolicyError::SetInputDataFailed)?;
 
-    if let Some(query_extension) = query_extension {
+    for (name, query_extension) in query_extensions {
         engine
-            .add_extension("query_reference_value".to_string(), 1, query_extension)
+            .add_extension(name, 1, query_extension)
             .map_err(PolicyError::EvalPolicyFailed)?;
     }
 

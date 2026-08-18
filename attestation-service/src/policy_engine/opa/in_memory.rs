@@ -19,6 +19,7 @@ use crate::{
 /// base64url wire format `set_policy` receives, matching `opa::OPA`).
 pub struct OPAInMemory {
     policies: RwLock<HashMap<String, Vec<u8>>>,
+    artifact_server_address: String,
 }
 
 impl OPAInMemory {
@@ -28,12 +29,17 @@ impl OPAInMemory {
     /// stripped), matching how `opa::OPA::evaluate` looks up `{policy_id}.rego`.
     /// This lets a broker's default policy flow (`evaluate(..., "default", ...)`)
     /// succeed without any filesystem access.
-    pub fn with_raw_default_policy(raw_default_policy: &str, default_policy_id: &str) -> Self {
+    pub fn with_raw_default_policy(
+        raw_default_policy: &str,
+        default_policy_id: &str,
+        artifact_server_address: &str,
+    ) -> Self {
         let stem = default_policy_id.trim_end_matches(".rego");
         let mut policies = HashMap::new();
         policies.insert(stem.to_string(), raw_default_policy.as_bytes().to_vec());
         Self {
             policies: RwLock::new(policies),
+            artifact_server_address: artifact_server_address.to_string(),
         }
     }
 
@@ -80,6 +86,7 @@ impl PolicyEngine for OPAInMemory {
             policy_id.to_string(),
             evaluation_rules,
             reference_value_resolver,
+            &self.artifact_server_address,
         )
         .await
     }
@@ -140,6 +147,8 @@ impl PolicyEngine for OPAInMemory {
 
 #[cfg(test)]
 mod tests {
+    use crate::config::DEFAULT_ARTIFACT_SERVER_ADDRESS;
+
     use super::*;
 
     const RAW_ALLOW_POLICY: &str = "package policy\ndefault allow = true";
@@ -149,7 +158,11 @@ mod tests {
 
     #[tokio::test]
     async fn set_get_list_delete_roundtrip() {
-        let eng = OPAInMemory::with_raw_default_policy(RAW_ALLOW_POLICY, "test");
+        let eng = OPAInMemory::with_raw_default_policy(
+            RAW_ALLOW_POLICY,
+            "test",
+            DEFAULT_ARTIFACT_SERVER_ADDRESS,
+        );
         assert_eq!(eng.list_policies().await.unwrap().len(), 1);
         assert_eq!(eng.get_policy("test".into()).await.unwrap(), allow_policy());
         eng.delete_policy("test".into()).await.unwrap();
@@ -160,7 +173,11 @@ mod tests {
     async fn set_policy_then_get_roundtrip() {
         // Covers the set_policy -> get_policy path (the roundtrip above only
         // exercises with_default_policy). Verifies raw rego in == raw rego out.
-        let eng = OPAInMemory::with_raw_default_policy(RAW_ALLOW_POLICY, "default");
+        let eng = OPAInMemory::with_raw_default_policy(
+            RAW_ALLOW_POLICY,
+            "default",
+            DEFAULT_ARTIFACT_SERVER_ADDRESS,
+        );
         eng.set_policy("test".into(), allow_policy().into())
             .await
             .unwrap();
@@ -175,7 +192,11 @@ mod tests {
 
     #[tokio::test]
     async fn evaluate_uses_in_memory_policy() {
-        let eng = OPAInMemory::with_raw_default_policy(RAW_ALLOW_POLICY, "test");
+        let eng = OPAInMemory::with_raw_default_policy(
+            RAW_ALLOW_POLICY,
+            "test",
+            DEFAULT_ARTIFACT_SERVER_ADDRESS,
+        );
         eng.set_policy("p".into(), allow_policy()).await.unwrap();
         let res = eng
             .evaluate(
