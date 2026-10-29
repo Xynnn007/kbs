@@ -75,9 +75,11 @@ TDX and vTPM still have to be separated inside the file, so the file grows one s
 
 Each policy file produces one submodule, and that submodule's policy id is the id of that file. AS is given those ids directly. There is no group name on the AS side, and no suffix is added.
 
-Each device verification result carries a device name. A policy lists the names it accepts. AS runs a policy only when that list contains the device name. The four slots are not the key.
+Each device result carries a device name. A policy lists the names it accepts. Its input is every result in this attestation whose device name is on that list, together, and that run writes one submodule. The four slots are not the key.
 
-The submodule name is written by the policy. If two submodules in one token would get the same name, that is a configuration error. AS does not add an index to tell them apart.
+The submodule name is written by the policy. If two policies would write the same submodule name, that is a configuration error. AS does not add an index to tell them apart.
+
+Putting the accepted results into one input lets one policy judge a whole group, such as eight Hopper GPUs and their switches in one node. A list that contains only `tdx` still receives the one CPU result, as it does today.
 
 Device names follow the shape of the result, not the product generation. TDX and SNP have different fields, so they are two names. Hopper and Blackwell share one set of fields, so they share `nvidia-gpu`. A switch is `nvidia-switch`. PPCIE is not a card, so it is `nvidia-ppcie`. A later generation with a different result shape gets its own name. NVIDIA results do not carry these names today. Verifiers have to add them before a list can select them.
 
@@ -138,7 +140,7 @@ The four slots stay. `cpu` still holds TDX and vTPM together. A group is expecte
 |                                    | A: one file                            | B: one policy per submodule                                                         | C: one group name, subclass files                          |
 | ---------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------------------- |
 | Names                              | One string for set, request, and token | The policy id given to AS is the id stored and the id on that submodule | One group name on the KBS side maps to several subclass policy ids. AS sees only those ids. The token shows the group name |
-| How a device result finds a policy | Inside the one file, by device         | Match the device name against the policy's list                                     | Group name plus subclass (`cpu`, `gpu`, `switch`, `ppcie`) |
+| How a device result finds a policy | Inside the one file, by device         | Accepted results enter that policy together                                          | Group name plus subclass (`cpu`, `gpu`, `switch`, `ppcie`) |
 | Submodule name                     | Device class plus an index             | Written by the policy. A repeated name is a configuration error                     | Device class plus an index                                 |
 | The four built-in policies         | Folded into one file                   | Kept. Each gains a list and a submodule name. AS is given their ids                 | Kept as the subclass files of the group `default`          |
 
