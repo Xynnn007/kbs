@@ -118,6 +118,29 @@ trust_claims := { "executables": executables }
 
 A TDX result matches both lists, so the token has two submodules: `cpu` from policy `cpu`, and `runtime` from policy `runtime-rtmr`. An SNP result matches only `cpu`. A vTPM result matches only `runtime-rtmr`.
 
+A single node of eight Hopper GPUs is one policy. The GPUs, the switches, and their links enter together and produce one submodule. The counts alone are not enough: each GPU must be Hopper and linked to the switches.
+
+```rego
+# policy id: hopper-8gpu
+devices := ["nvidia-gpu", "nvidia-switch"]
+submod := "hopper-node"
+
+hardware := 2 if {
+	gpus := [d | d := input.devices[_]; d.device == "nvidia-gpu"]
+	switches := [d | d := input.devices[_]; d.device == "nvidia-switch"]
+	count(gpus) == 8
+	count(switches) == 4
+	every gpu in gpus {
+		gpu.arch == "Hopper"
+		count(gpu.switch_links) == 4
+	}
+} else := 97 if {
+	input.devices
+}
+
+trust_claims := { "hardware": hardware }
+```
+
 If `runtime-rtmr` also set its submodule name to `cpu`, that would be a configuration error on a TDX result. The two scores are not merged, and no index is added.
 
 The four built-in policies stay as separate files on AS. Each gains a device-name list and a submodule name. AS is asked for those policy ids directly. `default` is not a name AS resolves.
